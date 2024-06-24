@@ -27,8 +27,9 @@ func main() {
 	flag.Parse()
 
 	removedUsers := strings.Split(*userSting, ",")
-	log.Printf("will be removedUsers: %+v", removedUsers)
+	log.Printf("will be clean those users' keys: %+v", removedUsers)
 	doRemoveSshKey(*projectID, removedUsers)
+	log.Printf("clean doen")
 }
 
 func doRemoveSshKey(projectID string, removedUsers []string) {
@@ -67,7 +68,7 @@ func RemovedSshKeyFromZone(computeService *compute.Service, projectID string, zo
 		c <- ChannelObj{Status: true}
 		return
 	}
-
+	log.Printf("Start to clean keys in zone %s", zone.Name)
 	instanceChannel := make(chan ChannelObj, len(instances.Items))
 	for _, instance := range instances.Items {
 		log.Printf("Instance: %s", instance.Name)
