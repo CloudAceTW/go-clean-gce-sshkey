@@ -236,6 +236,152 @@ func TestRemovedSshKeyFromInstance(t *testing.T) {
 	})
 }
 
+func TestRemovedSshKeyFromZone(t *testing.T) {
+	t.Run("Success but no instance found", func(t *testing.T) {
+		mockService := &MockComputeService{
+			GetZonesFunc: func(projectID string) (*compute.ZoneList, error) {
+				return &compute.ZoneList{
+					Items: []*compute.Zone{
+						{Name: "zone1"},
+					},
+				}, nil
+			},
+			GetInstancesFunc: func(projectID, zone string) (*compute.InstanceList, error) {
+				return &compute.InstanceList{
+					Items: []*compute.Instance{},
+				}, nil
+			},
+			SetInstanceMetadataFunc: func(projectID, zone, instanceName string, metadata *compute.Metadata) error {
+				return nil
+			},
+		}
+
+		removedUsers := []string{"user1"}
+
+		zoneChannel := make(chan ChannelObj, 1)
+		RemovedSshKeyFromZone(mockService, "my-project-id", &compute.Zone{Name: "zone1"}, removedUsers, zoneChannel)
+
+		channelObj := <-zoneChannel
+		if !channelObj.Status {
+			t.Errorf("Expected success but got error: %v", channelObj.Error)
+		}
+	})
+	t.Run("Success", func(t *testing.T) {
+		mockService := &MockComputeService{
+			GetZonesFunc: func(projectID string) (*compute.ZoneList, error) {
+				return &compute.ZoneList{
+					Items: []*compute.Zone{
+						{Name: "zone1"},
+						{Name: "zone2"},
+					},
+				}, nil
+			},
+			GetInstancesFunc: func(projectID, zone string) (*compute.InstanceList, error) {
+				return &compute.InstanceList{
+					Items: []*compute.Instance{
+						{
+							Name: "instance1",
+							Metadata: &compute.Metadata{
+								Items: []*compute.MetadataItems{
+									{
+										Key:   "ssh-keys",
+										Value: ptr("user1:key1\nuser2:key2\nuser3:key3"),
+									},
+								},
+							},
+						},
+					},
+				}, nil
+			},
+			SetInstanceMetadataFunc: func(projectID, zone, instanceName string, metadata *compute.Metadata) error {
+				return nil
+			},
+		}
+
+		removedUsers := []string{"user1"}
+
+		zoneChannel := make(chan ChannelObj, 2)
+		RemovedSshKeyFromZone(mockService, "my-project-id", &compute.Zone{Name: "zone1"}, removedUsers, zoneChannel)
+		RemovedSshKeyFromZone(mockService, "my-project-id", &compute.Zone{Name: "zone2"}, removedUsers, zoneChannel)
+
+		for i := 0; i < 2; i++ {
+			channelObj := <-zoneChannel
+			if !channelObj.Status {
+				t.Errorf("Expected success but got error: %v", channelObj.Error)
+			}
+		}
+	})
+
+	t.Run("FailedToGetInstances", func(t *testing.T) {
+		mockService := &MockComputeService{
+			GetZonesFunc: func(projectID string) (*compute.ZoneList, error) {
+				return &compute.ZoneList{
+					Items: []*compute.Zone{
+						{Name: "zone1"},
+					},
+				}, nil
+			},
+			GetInstancesFunc: func(projectID, zone string) (*compute.InstanceList, error) {
+				return nil, errors.New("failed to get instances")
+			},
+		}
+
+		removedUsers := []string{"user1"}
+
+		zoneChannel := make(chan ChannelObj, 1)
+		RemovedSshKeyFromZone(mockService, "my-project-id", &compute.Zone{Name: "zone1"}, removedUsers, zoneChannel)
+
+		channelObj := <-zoneChannel
+		if !channelObj.Status {
+			t.Logf("Expected error: %v", channelObj.Error)
+			return
+		}
+		t.Errorf("Expected error but got success")
+	})
+
+	t.Run("FailedToSetInstanceMetadata", func(t *testing.T) {
+		mockService := &MockComputeService{
+			GetZonesFunc: func(projectID string) (*compute.ZoneList, error) {
+				return &compute.ZoneList{
+					Items: []*compute.Zone{
+						{Name: "zone1"},
+					},
+				}, nil
+			},
+			GetInstancesFunc: func(projectID, zone string) (*compute.InstanceList, error) {
+				return &compute.InstanceList{
+					Items: []*compute.Instance{
+						{
+							Name: "instance1",
+							Metadata: &compute.Metadata{
+								Items: []*compute.MetadataItems{
+									{
+										Key:   "ssh-keys",
+										Value: ptr("user1:key1\nuser2:key2\nuser3:key3"),
+									},
+								},
+							},
+						},
+					},
+				}, nil
+			},
+			SetInstanceMetadataFunc: func(projectID, zone, instanceName string, metadata *compute.Metadata) error {
+				return errors.New("failed to set metadata")
+			},
+		}
+
+		removedUsers := []string{"user1"}
+
+		zoneChannel := make(chan ChannelObj, 1)
+		RemovedSshKeyFromZone(mockService, "my-project-id", &compute.Zone{Name: "zone1"}, removedUsers, zoneChannel)
+
+		channelObj := <-zoneChannel
+		if channelObj.Status {
+			t.Errorf("Expected error but got success")
+		}
+	})
+}
+
 func ptr(s string) *string {
 	return &s
 }

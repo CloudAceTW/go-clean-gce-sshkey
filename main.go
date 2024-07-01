@@ -62,7 +62,7 @@ func RemovedSshKeyFromZone(computeService service.ComputeServiceInterface, proje
 	instances, err := computeService.GetInstances(projectID, zone.Name)
 	if err != nil {
 		log.Printf("Failed to list instances: %v", err)
-		c <- ChannelObj{Status: true}
+		c <- ChannelObj{Status: false}
 		return
 	}
 	if len(instances.Items) == 0 {
