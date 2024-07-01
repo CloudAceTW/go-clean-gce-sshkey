@@ -1,13 +1,13 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"flag"
 	"log"
 	"slices"
 	"strings"
 
+	"github.com/CloudAceTW/go-gce-metadata/service"
 	"google.golang.org/api/compute/v1"
 )
 
@@ -28,18 +28,20 @@ func main() {
 
 	removedUsers := strings.Split(*userSting, ",")
 	log.Printf("will be clean those users' keys: %+v", removedUsers)
-	doRemoveSshKey(*projectID, removedUsers)
-	log.Printf("clean doen")
-}
 
-func doRemoveSshKey(projectID string, removedUsers []string) {
-	ctx := context.Background()
-	computeService, err := compute.NewService(ctx)
+	computeServiceInterface, err := service.NewComputeService()
 	if err != nil {
 		log.Printf("Failed to create compute service: %v", err)
 		return
 	}
-	zoneList, err := computeService.Zones.List(projectID).Do()
+
+	log.Printf("clean start")
+	DoRemoveSshKey(computeServiceInterface, *projectID, removedUsers)
+	log.Printf("clean doen")
+}
+
+func DoRemoveSshKey(computeService service.ComputeServiceInterface, projectID string, removedUsers []string) {
+	zoneList, err := computeService.GetZones(projectID)
 	if err != nil {
 		log.Printf("Failed to list zones: %v", err)
 		return
@@ -56,8 +58,8 @@ func doRemoveSshKey(projectID string, removedUsers []string) {
 	}
 }
 
-func RemovedSshKeyFromZone(computeService *compute.Service, projectID string, zone *compute.Zone, removedUsers []string, c chan ChannelObj) {
-	instances, err := computeService.Instances.List(projectID, zone.Name).Do()
+func RemovedSshKeyFromZone(computeService service.ComputeServiceInterface, projectID string, zone *compute.Zone, removedUsers []string, c chan ChannelObj) {
+	instances, err := computeService.GetInstances(projectID, zone.Name)
 	if err != nil {
 		log.Printf("Failed to list instances: %v", err)
 		c <- ChannelObj{Status: true}
@@ -89,7 +91,7 @@ func RemovedSshKeyFromZone(computeService *compute.Service, projectID string, zo
 	c <- ChannelObj{Status: true}
 }
 
-func RemovedSshKeyFromInstance(computeService *compute.Service, projectID, zone string, instance *compute.Instance, removedUsers []string, c chan ChannelObj) {
+func RemovedSshKeyFromInstance(computeService service.ComputeServiceInterface, projectID, zone string, instance *compute.Instance, removedUsers []string, c chan ChannelObj) {
 	var newItems []*compute.MetadataItems
 	for _, item := range instance.Metadata.Items {
 		if item.Key == "ssh-keys" {
@@ -104,7 +106,7 @@ func RemovedSshKeyFromInstance(computeService *compute.Service, projectID, zone 
 		Items:       newItems,
 	}
 
-	_, err := computeService.Instances.SetMetadata(projectID, zone, instance.Name, &metadata).Do()
+	err := computeService.SetInstanceMetadata(projectID, zone, instance.Name, &metadata)
 	if err != nil {
 		log.Printf("Failed to set SSH key: %v", err)
 		c <- ChannelObj{Status: false, Error: err}
